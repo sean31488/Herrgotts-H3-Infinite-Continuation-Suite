@@ -54,7 +54,7 @@ function isConnected(input) {
 function setLabels(node) {
     for (const input of node?.inputs ?? []) {
         const index = qwenIndex(input);
-        if (index !== null) input.label = `Qwen Reference ${index}`;
+        if (index !== null) input.label = `Ref Image ${index}`;
         if (input?.name === "first_frame") input.label = "First Frame";
         if (input?.name === "last_frame") input.label = "Last Frame";
     }
@@ -70,7 +70,7 @@ function addQwenInput(node, index) {
     if (findInput(node, name)) return;
     const slot = node.addInput?.(name, "IMAGE");
     const input = slot ?? findInput(node, name);
-    if (input) input.label = `Qwen Reference ${index}`;
+    if (input) input.label = `Ref Image ${index}`;
 }
 
 function refreshNodeLayout(node) {

@@ -38,9 +38,9 @@ class DynamicQwenReferenceInputs(dict):
     def __init__(self, *args, tooltip: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
         self._qwen_tooltip = tooltip or (
-            "Optional Qwen-only image guide. It is shown to the MiniMax H3 text/vision "
-            "encoder as the next <Picture N>, but is not inserted into minimax_refs and "
-            "does not become a persistent Ref2VA/DiT reference latent."
+            "Optional reference image. It is shown to the MiniMax H3 text/vision "
+            "encoder as <Picture N> and VAE-encoded into minimax_refs as a native "
+            "Ref2VA reference latent."
         )
 
     def _dynamic_spec(self, key: str):
@@ -50,7 +50,7 @@ class DynamicQwenReferenceInputs(dict):
         return (
             "IMAGE",
             {
-                "tooltip": f"Qwen Reference {index}. {self._qwen_tooltip}",
+                "tooltip": f"Ref Image {index}. {self._qwen_tooltip}",
             },
         )
 
@@ -98,14 +98,19 @@ def picture_roles(
     *, first_frame: bool, last_frame: bool, qwen_reference_count: int,
     qwen_reference_indices: Iterable[int] | None = None,
 ) -> list[str]:
-    """Return the exact Qwen <Picture N> role order for v1.3."""
+    """Return the exact Qwen <Picture N> role order.
+
+    Connected Ref Images are the only Pictures (Hybrid presentation); First/Last
+    Frames are Pictures only when no Ref Image is connected.
+    """
+    indices = list(qwen_reference_indices or range(1, int(qwen_reference_count) + 1))
+    if indices:
+        return [f"Ref Image {int(i)}" for i in indices]
     roles: list[str] = []
     if first_frame:
         roles.append("First Frame")
     if last_frame:
         roles.append("Last Frame")
-    indices = list(qwen_reference_indices or range(1, int(qwen_reference_count) + 1))
-    roles.extend(f"Qwen Reference {int(i)}" for i in indices)
     return roles
 
 
@@ -144,7 +149,7 @@ def format_picture_map(
         lines.append("No <Picture N> inputs")
     if qwen_reference_count:
         lines.append(
-            f"Qwen References: {qwen_reference_count} (Qwen-only; not minimax_refs / not native Ref2VA latents)"
+            f"Ref Images: {qwen_reference_count} (Qwen <Picture N> + minimax_refs; First/Last Frames are keyframes only)"
         )
     if continuation:
         lines.append("Direct latent handover context is not a Qwen <Picture N> unless an image input is explicitly connected.")

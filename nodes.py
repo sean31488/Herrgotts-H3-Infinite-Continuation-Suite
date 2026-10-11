@@ -100,14 +100,21 @@ def _prepare_qwen_reference_image(image, width, height, mode):
     return _resize(image[:1], tw, th, "disabled")
 
 
+def _vae_reference_block(vae, image, width, height, mode):
+    """Native Ref2VA image block for minimax_refs, sized like the Qwen picture."""
+    prepared = _prepare_qwen_reference_image(image, width, height, mode)
+    th, tw = int(prepared.shape[1]), int(prepared.shape[2])
+    return {"kind": "image", "latent_h": th // 16, "latent_w": tw // 16, "latent": vae.encode(prepared)}
+
+
 def _tokenize_v13_picture_presentation(clip, prompt, keyframe_images, qwen_references,
                                         width, height, ref_image_size):
-    """Tokenize v1.3's consecutive Qwen <Picture N> presentation.
+    """Tokenize the v1.3 Qwen <Picture N> presentation.
 
-    First/Last keyframe images keep their native MiniMax picture priority. Extra
-    Qwen References follow after them, but remain Qwen-only: this helper never
-    adds anything to ``minimax_refs``. When no extra Qwen references are
-    connected, use ComfyUI's stock ``images=`` FL2VA/I2VA/L2VA path.
+    Connected Ref Images use the Hybrid ref2va + keyframe presentation: they are
+    <Picture 1..N> and First/Last stay VAE keyframes only. H3ContinuousStart.build
+    pairs them with ``minimax_refs``. Without Ref Images, use ComfyUI's stock
+    ``images=`` FL2VA/I2VA/L2VA path.
     """
     keyframe_images = list(keyframe_images or [])
     qwen_references = list(qwen_references or [])
@@ -116,14 +123,10 @@ def _tokenize_v13_picture_presentation(clip, prompt, keyframe_images, qwen_refer
         for image in qwen_references
         if image is not None
     ]
-    pictures = [*keyframe_images, *prepared]
-    if pictures:
-        # The stock MiniMax H3 tokenizer assigns <Picture 1>, <Picture 2>, ...
-        # in the exact order supplied through images=. Keeping the entire v1.3
-        # presentation on this path makes the extra references Qwen-only by
-        # construction; native DiT references are controlled separately by
-        # conditioning values such as minimax_refs.
-        return clip.tokenize(prompt, images=pictures)
+    if prepared:
+        return clip.tokenize(prompt, minimax_ref_items=[{"type": "image", "data": image} for image in prepared])
+    if keyframe_images:
+        return clip.tokenize(prompt, images=keyframe_images)
     return clip.tokenize(prompt)
 
 
@@ -441,11 +444,16 @@ class H3ContinuousStart:
             clip, prompt, keyframe_images, qwen_references, width, height, ref_image_size
         )
         cond = clip.encode_from_tokens_scheduled(tokens)
+        values = {}
         if keyframes:
-            cond = node_helpers.conditioning_set_values(cond, {
-                "minimax_keyframes": keyframes,
-                "minimax_frame_count": frame_count,
-            })
+            values["minimax_keyframes"] = keyframes
+            values["minimax_frame_count"] = frame_count
+        refs = [_vae_reference_block(vae, image, width, height, ref_image_size)
+                for image in qwen_references if image is not None]
+        if refs:
+            values["minimax_refs"] = refs
+        if values:
+            cond = node_helpers.conditioning_set_values(cond, values)
         return (cond, latent)
 
 
@@ -645,6 +653,8 @@ class H3ContinuousContinue:
             tokens = _tokenize_v13_picture_presentation(
                 clip, prompt, keyframe_images, qwen_references, width, height, ref_image_size
             )
+            refs = [_vae_reference_block(vae, image, width, height, ref_image_size)
+                    for image in qwen_references if image is not None] + refs
         else:
             # Exact v1.2.x behavior for old workflow class IDs.
             ref_items = []
@@ -1346,9 +1356,9 @@ class H3ContinuousStitchOutputV1:
 # ---------------------------------------------------------------------------
 
 _QWEN_REFERENCE_TOOLTIP = (
-    "Optional Qwen-only image guide. First/Last Frames keep the first <Picture N> "
-    "ordinals; Qwen References follow after them. Qwen References are NOT inserted "
-    "into minimax_refs and are not native Ref2VA/DiT reference latents. Connect this "
+    "Optional reference image. It is shown to Qwen as <Picture N> (Ref Image 1 = <Picture 1>) "
+    "and VAE-encoded into minimax_refs as a native Ref2VA reference latent. When any Ref Image "
+    "is connected, First/Last Frames are VAE keyframes only and get no <Picture N>. Connect this "
     f"socket to reveal the next one automatically (up to {MAX_QWEN_REFERENCES})."
 )
 

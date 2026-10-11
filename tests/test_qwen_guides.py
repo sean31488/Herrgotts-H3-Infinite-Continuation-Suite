@@ -35,7 +35,7 @@ def test_dynamic_input_mapping_recognizes_frontend_created_qwen_sockets():
     assert "qwen_reference_10" not in inputs
     spec = inputs["qwen_reference_4"]
     assert spec[0] == "IMAGE"
-    assert "Qwen Reference 4" in spec[1]["tooltip"]
+    assert "Ref Image 4" in spec[1]["tooltip"]
 
 
 def test_collect_qwen_references_is_numeric_not_lexicographic():
@@ -61,18 +61,15 @@ def test_keyframe_modes_cover_t2va_i2va_l2va_and_fl2va():
     assert qg.keyframe_mode(first_frame=True, last_frame=True) == "FL2VA"
 
 
-def test_picture_roles_keep_native_first_last_then_qwen_order():
+def test_picture_roles_ref_images_replace_first_last_pictures():
     qg = _load()
     assert qg.picture_roles(first_frame=True, last_frame=True, qwen_reference_count=2) == [
+        "Ref Image 1",
+        "Ref Image 2",
+    ]
+    assert qg.picture_roles(first_frame=True, last_frame=True, qwen_reference_count=0) == [
         "First Frame",
         "Last Frame",
-        "Qwen Reference 1",
-        "Qwen Reference 2",
-    ]
-    assert qg.picture_roles(first_frame=False, last_frame=True, qwen_reference_count=2) == [
-        "Last Frame",
-        "Qwen Reference 1",
-        "Qwen Reference 2",
     ]
 
 
@@ -84,7 +81,7 @@ def test_picture_roles_preserve_sparse_socket_numbers():
         qwen_reference_count=2,
         qwen_reference_indices=[1, 4],
     )
-    assert roles == ["First Frame", "Qwen Reference 1", "Qwen Reference 4"]
+    assert roles == ["Ref Image 1", "Ref Image 4"]
 
 
 def test_start_picture_map_reports_exact_picture_assignment():
@@ -96,11 +93,10 @@ def test_start_picture_map_reports_exact_picture_assignment():
         continuation=False,
     )
     assert "H3 keyframe mode: FL2VA" in text
-    assert "Picture 1 = First Frame" in text
-    assert "Picture 2 = Last Frame" in text
-    assert "Picture 3 = Qwen Reference 1" in text
-    assert "Picture 4 = Qwen Reference 2" in text
-    assert "not minimax_refs" in text
+    assert "Picture 1 = Ref Image 1" in text
+    assert "Picture 2 = Ref Image 2" in text
+    assert "First Frame" not in text.split("Ref Images:")[0]
+    assert "minimax_refs" in text
 
 
 def test_continue_picture_map_does_not_count_direct_latent_as_picture():
@@ -112,9 +108,8 @@ def test_continue_picture_map_does_not_count_direct_latent_as_picture():
         continuation=True,
     )
     assert "Qwen presentation for Continue" in text
-    assert "Picture 1 = Last Frame" in text
-    assert "Picture 2 = Qwen Reference 1" in text
-    assert "Picture 3 = Qwen Reference 2" in text
+    assert "Picture 1 = Ref Image 1" in text
+    assert "Picture 2 = Ref Image 2" in text
     assert "Direct latent handover context is not a Qwen <Picture N>" in text
 
 
